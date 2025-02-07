@@ -4,3 +4,6 @@
 [submodule "source/min-lib"]
 	path = source/min-lib
 	url = https://github.com/Cycling74/min-lib.git
+[submodule "source/cmtk"]
+	path = source/cmtk
+	url = https://github.com/robotic4udio/cmtk.git
