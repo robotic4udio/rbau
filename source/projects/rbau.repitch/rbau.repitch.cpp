@@ -27,7 +27,7 @@ public:
 
     // Implement a sorting operator for the set
     bool operator<(const Note& other) const {
-        return m_pitch_in < other.m_pitch_in;
+        return m_pitch_out < other.m_pitch_out;
     }
 
     // Equality operator to use for deletion etc.
@@ -61,7 +61,7 @@ public:
         s_instances.insert(this);
 
         // Optionally, print the number of instances to the console
-        cout << "Number of instances: " << s_instances.size() << endl;
+        // cout << "Number of instances: " << s_instances.size() << endl;
     }
 
     // Destructor
@@ -70,12 +70,12 @@ public:
         s_instances.erase(this);
 
         // Optionally, print the number of instances to the console
-        cout << "Number of instances: " << s_instances.size() << endl;
+        // cout << "Number of instances: " << s_instances.size() << endl;
     }
 
     // Make inlets and outlets
     inlet<>  input	{ this, "(bang) post greeting to the max console" };
-    outlet<> output	{ this, "(anything) output the message which is posted to the max console" };
+    outlet<thread_check::scheduler, thread_action::fifo> output	{ this, "(anything) output the message which is posted to the max console" };
 
 
     // Attribute for mode of operation. 
@@ -93,7 +93,7 @@ public:
 
     // Notify all instances of a change
     static void notify_all(repitch* notifying_instance, notefication_type type) {
-        for (auto instance : s_instances) {
+        for (auto instance : s_instances){
             instance->notify(notifying_instance, type);
         }
     }
@@ -108,64 +108,30 @@ public:
     }
 
     // Notifycation function for allowed notes changed
-    void allowed_notes_changed(repitch* notifying_instance) {
+    void allowed_notes_changed(repitch* notifying_instance)
+    {
+        // Optionally, print the allowed notes to the console for verification
+        // cout << "Allowed notes changed by instance " << notifying_instance << endl;
 
-        // 1: The note is killed if it is not in the allowed notes
-        if(mode == 1)
-        {
-            // Use remove_if to get an iterator to the first element that should be removed
-            auto it = std::remove_if(s_playing_notes.begin(), s_playing_notes.end(), [this](const Note& note) {
-            return s_allowed_pitches_full_set.find(note.m_pitch_out) == s_allowed_pitches_full_set.end();
-            });
-
-            // Send noteoff for all playing notes that are not in the allowed notes by using the iterator returned by remove_if
-            for (auto note = it; note != s_playing_notes.end(); note++) {
-                output.send("note", note->m_pitch_out, 0);
-            }
-
-            // Remove the notes that are not in the allowed notes by passing the iterator returned by remove_if to erase
-            s_playing_notes.erase(it, s_playing_notes.end());
-        }
-
+        output_allowed_notes();
     }
 
     // Message allowed_notes:
-    message<> set_allowed_notes {this, "set_allowed_notes", "Input a vector of allowed notes.",
+    message<threadsafe::yes> set_allowed_notes {this, "set_allowed_notes", "Input a vector of allowed notes.",
         MIN_FUNCTION {
-            s_allowed_pitches_set.clear();
 
-            // Fill the set of pitches - one octave
+            // Clear the current set of allowed notes
+            for(int i = 0; i < 128; i++){
+                s_playing_allowed_notes[i] = false;
+            }
+
+            // Fill the set of pitches
             for (auto arg : args) {
-                if (arg.a_type == c74::max::A_LONG){
-                    int val = arg;
-                    val = val % 12;
-                    s_allowed_pitches_set.insert(val);
+                if (arg.a_type == c74::max::A_LONG || arg.a_type == c74::max::A_FLOAT){
+                    int pitch = arg;
+                    s_playing_allowed_notes[pitch] = true;
                 }
             }
-
-            // Full set of allowed pitches all octaves
-            s_allowed_pitches_full_set.clear();
-            for (int i = 0; i < 11; i++) {
-                for (auto note : s_allowed_pitches_set) {
-                    note = note + 12 * i;
-                    if(note > 127) break;
-                    s_allowed_pitches_full_set.insert(note);
-                }
-            }
-
-            // Optionally, print the allowed notes to the console for verification
-            cout << "Allowed notes: ";
-            for (auto note : s_allowed_pitches_set) {
-                cout << note << " ";
-            }
-            cout << endl;
-
-            // Optionally, print the allowed notes to the console for verification
-            cout << "All allowed notes: ";
-            for (auto note : s_allowed_pitches_full_set) {
-                cout << note << " ";
-            }
-            cout << endl;
 
             // Notify all instances of the change
             notify_all(this, notefication_type::allowed_notes_changed);
@@ -175,19 +141,13 @@ public:
     };
 
     // Add allowed notes to the set
-    message<> add_allowed_notes {this, "add_allowed_notes", "Input a vector of allowed notes to add.",
+    message<threadsafe::yes> add_allowed_notes {this, "add_allowed_notes", "Input a vector of allowed notes to add.",
         MIN_FUNCTION {
             // Fill the set of pitches - one octave
             for (auto arg : args) {
-                if (arg.a_type == c74::max::A_LONG){
-                    int val = arg;
-                    auto note = val % 12;
-                    s_allowed_pitches_set.insert(note);
-                    for (int i = 0; i < 11; i++) {
-                        note = note + 12 * i;
-                        if(note > 127) break;
-                        s_allowed_pitches_full_set.insert(note);
-                    }
+                if (arg.a_type == c74::max::A_LONG || arg.a_type == c74::max::A_FLOAT){
+                    int pitch = arg;
+                    s_playing_allowed_notes[pitch] = true;
                 }
             }
 
@@ -199,19 +159,13 @@ public:
     };
 
     // Remove allowed notes from the set
-    message<> remove_allowed_notes {this, "remove_allowed_notes", "Input a vector of allowed notes to remove.",
+    message<threadsafe::yes> remove_allowed_notes {this, "remove_allowed_notes", "Input a vector of allowed notes to remove.",
         MIN_FUNCTION {
             // Fill the set of pitches - one octave
             for (auto arg : args) {
-                if (arg.a_type == c74::max::A_LONG){
-                    int val = arg;
-                    auto note = val % 12;
-                    s_allowed_pitches_set.erase(note);
-                    for (int i = 0; i < 11; i++) {
-                        note = note + 12 * i;
-                        if(note > 127) break;
-                        s_allowed_pitches_full_set.erase(note);
-                    }
+                if (arg.a_type == c74::max::A_LONG || arg.a_type == c74::max::A_FLOAT){
+                    int pitch = arg;
+                    s_playing_allowed_notes[pitch] = false;
                 }
             }
 
@@ -222,17 +176,10 @@ public:
         } 
     };
 
-    // get_allowed_notes:
-    message<> get_allowed_notes {this, "get_allowed_notes", "Output the allowed notes.",
-        MIN_FUNCTION {
-            // Optionally, print the allowed notes to the console for verification
-            // cout << "Allowed notes: ";
-            // for (auto note : s_allowed_pitches_set) {
-            //     cout << note << " ";
-            // }
-            // cout << endl;
 
-            // Send the allowed notes to the output
+    // get_allowed_notes:
+    message<threadsafe::yes> get_allowed_notes {this, "get_allowed_notes", "Output the allowed notes.",
+        MIN_FUNCTION {
 
             output_allowed_notes();
 
@@ -241,19 +188,21 @@ public:
     };
 
 
-    void output_allowed_notes() {
+    void output_allowed_notes(){
         atoms allowed_notes;
         allowed_notes.push_back("allowed_notes");
         
-        for (auto note : s_allowed_pitches_set) {
-            allowed_notes.push_back(note);
+        for(int i = 0; i < 128; i++) {
+            if(s_playing_allowed_notes[i]) {
+                allowed_notes.push_back(i);
+            }
         }
 
         output.send(allowed_notes);
     }
 
     // note message
-    message<> note {this, "note", "Midi note message. If not in the allowed notes, the note is repitched.",
+    message<threadsafe::yes> note {this, "note", "Midi note message. If not in the allowed notes, the note is repitched.",
         MIN_FUNCTION {
             // Check that we get two arguments for pitch and velocity
             if (args.size() != 2) {
@@ -273,26 +222,24 @@ public:
             if(velocity == 0) 
             {
                 // Check if a note with the same pitch_in is already playing, if so, send noteoff and remove the note from the set
-                auto it = std::find_if(s_playing_notes.begin(), s_playing_notes.end(), [pitch_in](const Note& note) {
-                    return note.m_pitch_in == pitch_in;
+                auto it = std::remove_if(playing_notes.begin(), playing_notes.end(), [pitch_in, this](const Note& note) {
+                    const bool should_remove = note.m_pitch_in == pitch_in;
+                    if(should_remove) this->output.send("note", note.m_pitch_out, 0);
+                    return should_remove;
                 });
-                if (it != s_playing_notes.end()) {
-                    output.send("note", it->m_pitch_out, 0);
-                    s_playing_notes.erase(it);
-                }
+                playing_notes.erase(it, playing_notes.end());
             }
             else 
             {
-                int pitch_out = quantize_note(pitch_in);
+                int pitch_out = find_nearest_pitch(pitch_in);
 
                 // Check if a note with the same pitch_in is already playing, if so, send noteoff and remove the note from the set
-                auto it = std::find_if(s_playing_notes.begin(), s_playing_notes.end(), [pitch_in, pitch_out](const Note& note) {
-                    return (note.m_pitch_in == pitch_in) || (note.m_pitch_out == pitch_out);
+                auto it = std::remove_if(playing_notes.begin(), playing_notes.end(), [pitch_in, pitch_out, this](const Note& note) {
+                    const bool should_remove = (note.m_pitch_in == pitch_in) || (note.m_pitch_out == pitch_out);
+                    if(should_remove) this->output.send("note", note.m_pitch_out, 0);
+                    return should_remove;
                 });
-                if (it != s_playing_notes.end()) {
-                    output.send("note", it->m_pitch_out, 0);
-                    s_playing_notes.erase(it);
-                }
+                playing_notes.erase(it, playing_notes.end());
                 
                 // Create a new note
                 Note new_note = Note(pitch_in, pitch_out, velocity);
@@ -301,7 +248,7 @@ public:
                 output.send("note", new_note.m_pitch_out, new_note.m_velocity);
 
                 // Add the note to the set of playing notes
-                s_playing_notes.push_back(new_note);
+                playing_notes.push_back(new_note);
             }
 
             return {};
@@ -309,35 +256,29 @@ public:
     };
 
     // Allowed Note
-    message<> allowed_note {this, "allowed_note", "Midi note message. If note-on it is added to the allowed notes, else it is removed.",
+    message<threadsafe::yes> allowed_note {this, "allowed_note", "Midi note message. If note-on it is added to the allowed notes, else it is removed.",
         MIN_FUNCTION {
             // Check that we get two arguments for pitch and velocity
             if (args.size() != 2) {
-                cout << "Error: allowed_note message requires two arguments: pitch and velocity." << endl;
+                cerr << "allowed_note message requires two arguments: pitch and velocity." << endl;
                 return {};
             }
 
             int pitch_in = args[0];
             int velocity = args[1];
 
+
             // Check that the velocity is between 0 and 127
             if(velocity < 0 || velocity > 127) {
-                cout << "Error: velocity must be between 0 and 127." << endl;
+                cerr << "velocity must be between 0 and 127." << endl;
                 return {};
             }
 
-            if(velocity == 0) 
-            {
-                remove_allowed_notes(pitch_in);
+            // Set the allowed note
+            s_playing_allowed_notes[pitch_in] = velocity;
 
-            }
-            else 
-            {
-                add_allowed_notes(pitch_in);
-            }
-
-            // Send the allowed notes to the output
-            output_allowed_notes();
+            // Notify all instances of the change
+            notify_all(this, notefication_type::allowed_notes_changed);
 
             return {};
         }
@@ -348,41 +289,69 @@ public:
 
 private:
 
+    bool is_pitch_allowed(int pitch) {        
+        int p = pitch;
+
+        // Special case
+        if(s_playing_allowed_notes[p]) return true;
+
+        // Check octaves below
+        p = pitch - 12;
+        while(p >= 0)
+        {
+            if(s_playing_allowed_notes[p]) return true;
+            p -= 12;
+        }
+
+        // Check octaves above
+        p = pitch + 12;
+        while(p < 128)
+        {
+            if(s_playing_allowed_notes[p]) return true;
+            p += 12;
+        }
+        
+        // If no allowed pitch is found, return false
+        return false;
+    }
+
+
    int find_nearest_pitch(int pitch){
-        int min_dist = 1000;
-        int nearest_pitch = -1;
-        for (auto note : s_allowed_pitches_full_set) {
-            int dist = abs(note - pitch);
-            if (dist < min_dist) {
-                min_dist = dist;
-                nearest_pitch = note;
+        
+        if(is_pitch_allowed(pitch)) return pitch;
+
+        // Find the nearest pitch
+        for(int i=1; i<7; i++) {
+            if(is_pitch_allowed(pitch - i)){
+                return pitch - i;
+            }
+            else if(is_pitch_allowed(pitch + i)){
+                return pitch + i;
             }
         }
-        return nearest_pitch;
+        
+        // If no pitch is found, post an error and return the pitch
+        cerr << "Error: No allowed pitch found for pitch " << pitch << endl;
+        return pitch;
     }
     
 
-    // A function that takes a note in and returns a note out. The note out is quantized to the nearest allowed pitch.
-    int quantize_note(const int& a_note)
-    {
-        if(s_allowed_pitches_set.empty()) {
-            cout << "No allowed notes set. Please set allowed notes first." << endl;
-            return a_note;
-        }
 
-        // Return the nearest pitch
-        return find_nearest_pitch(a_note);
-    };
+
+
 
     // List of all playing notes
-    std::vector<Note> s_playing_notes = {};
+    std::vector<Note> playing_notes = {};
 
     // Static list of all instances of the class
     static std::set<repitch*> s_instances;
 
     // Static list of all allowed pitches
-    static std::set<int> s_allowed_pitches_set;
-    static std::set<int> s_allowed_pitches_full_set;
+    static bool s_playing_allowed_notes[128];
+
+    // Mutex for thread safety
+    mutex m_mutex;
+
 
 };
 
@@ -398,11 +367,11 @@ Note::Note(int a_pitch_in, int a_pitch_out, int a_velocity)
 }
 
 
+// Init s_playing_allowed_notes to false
+bool repitch::s_playing_allowed_notes[128] = {false};
+
 // Init Static variables
 std::set<repitch*> repitch::s_instances = {};
-// Init the set of allowed pitches
-std::set<int> repitch::s_allowed_pitches_set = {};
-std::set<int> repitch::s_allowed_pitches_full_set = {};
 
 long Note::s_counter = 0;
 
