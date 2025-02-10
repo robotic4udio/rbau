@@ -230,13 +230,45 @@ public:
         cout << "TODO: Chord changed by instance " << notifying_instance << endl;
     }
 
+    // Get the chord as a string
+    message<threadsafe::yes> get_chord {this, "get_chord", "Return the chord.",
+        MIN_FUNCTION {
+            atoms res;
+            res.push_back("chord");
+            res.push_back(s_chord.toString());
+
+            output.send(res);
+
+            return {};
+        } 
+    };
+
     // Get the pitch vector from the chord
     message<threadsafe::yes> get_pitch_vector {this, "get_pitch_vector", "Return the midinotes of the chord tones.",
         MIN_FUNCTION {
             atoms res;
-            res.push_back("s_pitch_vector");
-            for(auto pitch : s_pitch_vector) {
-                res.push_back(pitch);
+            res.push_back("pitch_vector");
+            
+            if(args.size() == 1) {
+                for(auto pitch : s_pitch_vector){
+                    int octave = args[0];
+                    int transpose =  (octave * 12 + cmtk::C0) - cmtk::C3;
+                    res.push_back(pitch+transpose);
+                }
+            }
+            else if(args.size() == 2 && static_cast<int>(args[1]) - static_cast<int>(args[0]) >= 11) {
+                int low = args[0];
+                int high = args[1];
+                for(auto pitch : s_pitch_vector){
+                    while(pitch < low) pitch += 12;
+                    while(pitch > high) pitch -= 12;
+                    res.push_back(pitch);
+                }
+            }
+            else {            
+                for(auto pitch : s_pitch_vector) {
+                    res.push_back(pitch);
+                }
             }
 
             output.send(res);
@@ -244,6 +276,111 @@ public:
             return {};
         } 
     };
+
+    // Get the Root of the chord
+    message<threadsafe::yes> get_root {this, "get_root", "Return the root of the chord.",
+        MIN_FUNCTION {
+            atoms res;
+            res.push_back("root");
+
+            if( (args.size() == 2) && (static_cast<int>(args[1])-static_cast<int>(args[0]) >= 11) ) {
+                int low = args[0];
+                int high = args[1];
+                res.push_back(s_chord.getRoot(low,high).getPitch());
+            }
+            else {
+                res.push_back(s_chord.getRoot().getPitch());
+            }
+
+            output.send(res);
+
+            return {};
+        } 
+    };
+
+    // Get the Bass of the chord
+    message<threadsafe::yes> get_bass {this, "get_bass", "Return the bass of the chord.",
+        MIN_FUNCTION {
+
+            atoms res;
+            res.push_back("bass");
+
+            if(args.size() == 2 && static_cast<int>(args[1]) - static_cast<int>(args[0]) >= 11) {
+                int low = args[0];
+                int high = args[1];
+                res.push_back(s_chord.getBass(low,high).getPitch());
+            }
+            else {
+                res.push_back(s_chord.getBass().getPitch());
+            }
+
+
+            output.send(res);
+
+            return {};
+        } 
+    };
+
+    // Get the Random note from the chord
+    message<threadsafe::yes> get_rand_note {this, "get_rand_note", "Return a random note from the chord.",
+        MIN_FUNCTION {
+
+            atoms res;
+            res.push_back("rand_note");
+
+            // Get a random note from the pitch vector
+            int note = s_pitch_vector[rand() % s_pitch_vector.size()];
+
+            if(args.size() == 2 && static_cast<int>(args[1]) - static_cast<int>(args[0]) >= 11) {
+                int low = args[0];
+                int high = args[1];
+
+                int rand_octave = -10 + rand() % 20;
+
+                note += (rand_octave * 12);
+
+                // Make sure the note is within the range
+                while(note < low)  note += 12;
+                while(note > high) note -= 12;
+                res.push_back(note);
+            }
+            else {
+                res.push_back(note);
+            }
+
+
+            output.send(res);
+
+            return {};
+        } 
+    };
+
+
+    // Get Quantized to Chord Note (accepts lists)
+    message<threadsafe::yes> quantize {this, "quantize", "Quantize the pitch to the nearest chord note.",
+        MIN_FUNCTION {
+            // Check that we get one argument for pitch
+            if (args.size() < 1) {
+                cerr << "quantize message requires one argument: pitch." << endl;
+                return {};
+            }
+
+            atoms res;
+            res.push_back("quantized");
+            for (const auto& arg : args) {
+                int pitch_in = arg;
+                int pitch_out = find_nearest_pitch(pitch_in);
+                res.push_back(pitch_out);
+            }
+
+            output.send(res);
+
+            return {};
+        } 
+    };
+
+
+
 
     // Note message: The note will be repitched to nearest chord note
     message<threadsafe::yes> note {this, "note", "Midi note message. If not in the allowed notes, the note is repitched.",
