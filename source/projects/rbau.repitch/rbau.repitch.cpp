@@ -135,9 +135,9 @@ public:
 
     // Make inlets and outlets
     inlet<>  input	{ this, "(bang) post greeting to the max console" };
-    outlet<thread_check::scheduler, thread_action::fifo> output	{ this, "(anything) output the message which is posted to the max console" };
+    outlet<thread_check::scheduler, thread_action::fifo> out1	{ this, "(anything) output the message which is posted to the max console" };
+    outlet<thread_check::scheduler, thread_action::fifo> out2 { this, "(bang) when the chord changes" };
 
-    // Update Chord
 
 
     // Transport Time in Ticks for the chord track
@@ -227,7 +227,7 @@ public:
     // Notifycation function for allowed notes changed
     void chord_changed(repitch* notifying_instance)
     {
-        cout << "TODO: Chord changed by instance " << notifying_instance << endl;
+        out2.send("bang");
     }
 
     // Get the chord as a string
@@ -237,7 +237,7 @@ public:
             res.push_back("chord");
             res.push_back(s_chord.toString());
 
-            output.send(res);
+            out1.send(res);
 
             return {};
         } 
@@ -271,7 +271,7 @@ public:
                 }
             }
 
-            output.send(res);
+            out1.send(res);
 
             return {};
         } 
@@ -292,7 +292,7 @@ public:
                 res.push_back(s_chord.getRoot().getPitch());
             }
 
-            output.send(res);
+            out1.send(res);
 
             return {};
         } 
@@ -315,7 +315,7 @@ public:
             }
 
 
-            output.send(res);
+            out1.send(res);
 
             return {};
         } 
@@ -349,7 +349,7 @@ public:
             }
 
 
-            output.send(res);
+            out1.send(res);
 
             return {};
         } 
@@ -373,7 +373,7 @@ public:
                 res.push_back(pitch_out);
             }
 
-            output.send(res);
+            out1.send(res);
 
             return {};
         } 
@@ -405,7 +405,7 @@ public:
                 // Check if a note with the same pitch_in is already playing, if so, send noteoff and remove the note from the set
                 auto it = std::remove_if(playing_notes.begin(), playing_notes.end(), [pitch_in, this](const Note& note) {
                     const bool should_remove = note.m_pitch_in == pitch_in;
-                    if(should_remove) this->output.send("note", note.m_pitch_out, 0);
+                    if(should_remove) this->out1.send("note", note.m_pitch_out, 0);
                     return should_remove;
                 });
                 playing_notes.erase(it, playing_notes.end());
@@ -417,7 +417,7 @@ public:
                 // Check if a note with the same pitch_in is already playing, if so, send noteoff and remove the note from the set
                 auto it = std::remove_if(playing_notes.begin(), playing_notes.end(), [pitch_in, pitch_out, this](const Note& note) {
                     const bool should_remove = (note.m_pitch_in == pitch_in) || (note.m_pitch_out == pitch_out);
-                    if(should_remove) this->output.send("note", note.m_pitch_out, 0);
+                    if(should_remove) this->out1.send("note", note.m_pitch_out, 0);
                     return should_remove;
                 });
                 playing_notes.erase(it, playing_notes.end());
@@ -426,7 +426,7 @@ public:
                 Note new_note = Note(pitch_in, pitch_out, velocity);
 
                 // Send a noteon message
-                output.send("note", new_note.m_pitch_out, new_note.m_velocity);
+                out1.send("note", new_note.m_pitch_out, new_note.m_velocity);
 
                 // Add the note to the set of playing notes
                 playing_notes.push_back(new_note);
