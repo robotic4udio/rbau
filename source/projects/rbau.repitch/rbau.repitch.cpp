@@ -5,17 +5,77 @@
 
 #include "c74_min.h"
 #include <set>
+#include "Scale.h"
+#include "Chord.h"
+#include "Note.h"
+#include "Interval.h"
 
 using namespace c74::min;
 
 // A class to represent a note. A note that can be repitched, therefore we store both pitch_in and pitch_out.
+
+
+class ChordTrack {
+public:
+    struct Chord {
+    public:
+        Chord() : m_chord(""), m_start(-1), m_end(-1) {}
+        Chord(std::string a_chord, double a_start, double a_end) : m_chord(a_chord), m_start(a_start), m_end(a_end) {}
+        std::string m_chord;
+        double      m_start;
+        double      m_end;
+
+        // Stream operator to print the chord
+        friend std::ostream& operator<<(std::ostream& os, const Chord& chord) {
+            os << "Chord:(" << chord.m_chord << "," << chord.m_start << "," << chord.m_end << ")";
+            return os;
+        }
+    };
+
+    ChordTrack() {}
+
+    void from_atoms(const atoms& args) {
+        m_chords.clear();
+        m_chords.reserve(args.size()/3);
+        for(int i=0; i<args.size(); i+=3) {
+            add_chord(args[i], args[i+1], args[i+2]);
+        }
+    }
+
+    void add_chord(const std::string& a_chord, double a_start, double a_end) {
+        m_chords.push_back(Chord(a_chord, a_start, a_end));
+    }
+
+    // Get Chord at time
+    const Chord& get_chord_at_time(double time) const {
+        for(auto it = m_chords.rbegin(); it != m_chords.rend(); ++it) {
+            if(it->m_start <= time) return *it;
+        }
+        // Return an empty chord if no chord is found
+        return Chord("", 0, 0);
+    }
+
+    // Stream operator to print the chord track
+    friend std::ostream& operator<<(std::ostream& os, const ChordTrack& chord_track) {
+        os << "ChordTrack:(";
+        for(auto& chord : chord_track.m_chords) {
+            os << chord << ",";
+        }
+        os << ")";
+        return os;
+    }
+
+private:
+    std::vector<Chord> m_chords;
+
+};
+
+
 class Note {
 public:
     Note(int a_pitch_in, int a_pitch_out, int a_velocity);
 
-    long id() {
-        return m_id;
-    }
+    long id() { return m_id; }
 
     int         m_pitch_in;  // pitch we keep for the noteoff
     int         m_pitch_out; // pitch we keep for the noteon
@@ -52,7 +112,7 @@ public:
 
 
     enum class notefication_type {
-        allowed_notes_changed
+        allowed_notes_changed, chord_changed
     };
 
     // Constructor
@@ -76,6 +136,63 @@ public:
     // Make inlets and outlets
     inlet<>  input	{ this, "(bang) post greeting to the max console" };
     outlet<thread_check::scheduler, thread_action::fifo> output	{ this, "(anything) output the message which is posted to the max console" };
+
+    // Update Chord
+
+
+
+    message<threadsafe::yes> number { this, "number", "Transport Time in Ticks", 
+        MIN_FUNCTION {
+            // Post the number of instances to the console
+            // cout << "Transport Time in Beats: " << static_cast<double>(args[0]) * beats_per_tick << endl;
+            double last_beats = beats;
+            beats = static_cast<double>(args[0]) * beats_per_tick;
+
+            // Don't do anything if the beats are the same
+            if(last_beats == beats) return {};
+            last_beats = beats;
+
+            // Get the new chord
+            const auto& new_chord = chord_track.get_chord_at_time(beats);
+
+            if(new_chord.m_chord != current_chord.m_chord) {
+                current_chord = new_chord;
+                set_chord(new_chord.m_chord);
+            }
+ 
+            return {};
+        }  
+    };
+
+    // Set Chord Manually
+    message<> set_chord { this, "set_chord", "Input the Chord, format: 'C7', 'C7 0 4 F7 4 12 B 12 16'",
+        MIN_FUNCTION {
+            
+            chord.setChord(args[0]);
+            pitch_vector = chord.getNotes().getPitch();
+
+            cout << chord.toString() << " - " << chord.getNotes() << endl;
+
+            notify_all(this, notefication_type::chord_changed);
+
+            return {};
+        }  
+    };
+
+
+    message<> set_chord_track { this, "set_chord_track", "Input the ChordTrack, format: 'C7 0 4 F7 4 12 B 12 16', Chord, StartTime, EndTime",
+        MIN_FUNCTION {
+            // Post the number of instances to the console
+            // cout << "Transport Time in Beats: " << static_cast<double>(args[0]) * beats_per_tick << endl;
+            chord_track.from_atoms(args);
+
+            cout << chord_track << endl;
+
+            number(beats < 0 ? 0 : static_cast<double>(beats / beats_per_tick + 0.0001));
+
+            return {};
+        }  
+    };   
 
 
     // Attribute for mode of operation. 
@@ -103,7 +220,10 @@ public:
         switch (type) {
             case notefication_type::allowed_notes_changed: 
                 allowed_notes_changed(notifying_instance);
-                break;
+            break;
+            case notefication_type::chord_changed: 
+                chord_changed(notifying_instance);
+            break;
         }
     }
 
@@ -114,6 +234,12 @@ public:
         // cout << "Allowed notes changed by instance " << notifying_instance << endl;
 
         output_allowed_notes();
+    }
+
+    // Notifycation function for allowed notes changed
+    void chord_changed(repitch* notifying_instance)
+    {
+        cout << "TODO: Chord changed by instance " << notifying_instance << endl;
     }
 
     // Message allowed_notes:
@@ -200,6 +326,20 @@ public:
 
         output.send(allowed_notes);
     }
+
+    message<threadsafe::yes> get_pitch_vector {this, "get_pitch_vector", "Return the midinotes of the chord tones.",
+        MIN_FUNCTION {
+            atoms res;
+            res.push_back("pitch_vector");
+            for(auto pitch : pitch_vector) {
+                res.push_back(pitch);
+            }
+
+            output.send(res);
+
+            return {};
+        } 
+    };
 
     // note message
     message<threadsafe::yes> note {this, "note", "Midi note message. If not in the allowed notes, the note is repitched.",
@@ -289,6 +429,7 @@ public:
 
 private:
 
+    // Check if a pitch is allowed
     bool is_pitch_allowed(int pitch) {        
         int p = pitch;
 
@@ -352,6 +493,16 @@ private:
     // Mutex for thread safety
     mutex m_mutex;
 
+    // Inclu
+
+    
+    static ChordTrack chord_track;
+    static ChordTrack::Chord current_chord;
+    static cmtk::Chord chord;
+    static std::vector<int> pitch_vector;
+
+    static double beats_per_tick;
+    static double beats;
 
 };
 
@@ -375,8 +526,15 @@ std::set<repitch*> repitch::s_instances = {};
 
 long Note::s_counter = 0;
 
+// Init ChordTrack
+ChordTrack repitch::chord_track = ChordTrack();
+ChordTrack::Chord repitch::current_chord = ChordTrack::Chord();
+cmtk::Chord repitch::chord = cmtk::Chord();
+std::vector<int> repitch::pitch_vector = {};
 
-
+// Init Static Beat
+double repitch::beats_per_tick = 1.0/480.0;
+double repitch::beats = -1.0;
 
 
 MIN_EXTERNAL(repitch);
