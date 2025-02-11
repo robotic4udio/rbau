@@ -67,7 +67,6 @@ public:
 
 private:
     std::vector<Chord> m_chords;
-
 };
 
 
@@ -176,7 +175,7 @@ public:
             notify_all(this, notefication_type::chord_changed);
 
             return {};
-        }  
+        }
     };
 
     // Set ChordTrack
@@ -208,6 +207,24 @@ public:
         }}
     };
 
+
+    // Attribute for note mode
+    enum class note_modes : int { pass, quantize, select, enum_count };
+    enum_map note_modes_range = {"pass", "quantize", "select"};
+    attribute<note_modes> note_mode { this, "note_mode", note_modes::pass, note_modes_range,
+        description {"Choose what happens when a note is played."}
+    };
+
+    attribute<int> play_chord {this, "play_chord", 0,
+        description {"When the chord changes, the chord is played"},
+        range {0, 1},  // Define a range for the parameter
+        setter {MIN_FUNCTION {
+            int play_chord = args[0];
+            cout << "play_chord set to " << play_chord << endl;
+            return args;
+        }}
+    };
+
     // Notify all instances of a change
     static void notify_all(repitch* notifying_instance, notefication_type type) {
         for (auto instance : s_instances){
@@ -224,14 +241,26 @@ public:
         }
     }
 
-    // Notifycation function for allowed notes changed
+    // Notification function for chord_changed
     void chord_changed(repitch* notifying_instance)
     {
+        if(play_chord == 1) {
+            cout << "Chord changed: " << s_chord.toString() << "will be played. Size of pitch vector = " << s_pitch_vector.size() << endl;
+            noteOff(-1);
+            for(auto pitch : s_pitch_vector){
+                // Create a new note
+                cout << "note( " << pitch << ", 100)" << endl;
+                noteOn(-1, pitch, 100);
+            }
+
+        }
+
+        // Send a bang to the second outlet to notify that the chord has changed
         out2.send("bang");
     }
 
     // Get the chord as a string
-    message<threadsafe::yes> get_chord {this, "get_chord", "Return the chord.",
+    message<threadsafe::yes> get_chord {this, "get_chord", "Return the chord symbol.",
         MIN_FUNCTION {
             atoms res;
             res.push_back("chord");
@@ -379,9 +408,6 @@ public:
         } 
     };
 
-
-
-
     // Note message: The note will be repitched to nearest chord note
     message<threadsafe::yes> note {this, "note", "Midi note message. If not in the allowed notes, the note is repitched.",
         MIN_FUNCTION {
@@ -412,11 +438,38 @@ public:
             }
             else 
             {
-                int pitch_out = find_nearest_pitch(pitch_in);
+                int pitch_out = pitch_in;
+
+                switch(note_mode) {
+                    case note_modes::pass:{ 
+                    }
+                    break;
+                    case note_modes::quantize:{ 
+                        pitch_out = find_nearest_pitch(pitch_in); 
+                    } 
+                    break; 
+                    case note_modes::select:{ 
+                        auto n = s_chord.size();
+                        auto index = pitch_in-60;
+                        int transpose = 0;
+                        while(index < 0){
+                            index += n;
+                            transpose -= 12;
+                        }
+                        while(index >= n){
+                            index -= n;
+                            transpose += 12;
+                        }
+                        pitch_out = s_chord.getNoteAt(index).getPitch() + transpose;
+                    } 
+                    break;
+                    case note_modes::enum_count: 
+                    break;
+                }
 
                 // Check if a note with the same pitch_in is already playing, if so, send noteoff and remove the note from the set
                 auto it = std::remove_if(playing_notes.begin(), playing_notes.end(), [pitch_in, pitch_out, this](const Note& note) {
-                    const bool should_remove = (note.m_pitch_in == pitch_in) || (note.m_pitch_out == pitch_out);
+                    const bool should_remove = (note.m_pitch_out == pitch_out) || (note.m_pitch_in >= 0 && note.m_pitch_in == pitch_in);
                     if(should_remove) this->out1.send("note", note.m_pitch_out, 0);
                     return should_remove;
                 });
@@ -436,8 +489,36 @@ public:
         }
     };
 
+    void noteOff(int pitch_in)
+    {
+        // Check if a note with the same pitch_in is already playing, if so, send noteoff and remove the note from the set
+        auto it = std::remove_if(playing_notes.begin(), playing_notes.end(), [pitch_in, this](const Note& note) {
+            const bool should_remove = note.m_pitch_in == pitch_in;
+            if(should_remove) this->out1.send("note", note.m_pitch_out, 0);
+            return should_remove;
+        });
+        playing_notes.erase(it, playing_notes.end());
+    }
 
+    void noteOn(int pitch_in, int pitch_out, int velocity)
+    {
+        // Check if a note with the same pitch_in is already playing, if so, send noteoff and remove the note from the set
+        auto it = std::remove_if(playing_notes.begin(), playing_notes.end(), [pitch_in, pitch_out, this](const Note& note) {
+            const bool should_remove = (note.m_pitch_out == pitch_out) || (note.m_pitch_in >= 0 && note.m_pitch_in == pitch_in);
+            if(should_remove) this->out1.send("note", note.m_pitch_out, 0);
+            return should_remove;
+        });
+        playing_notes.erase(it, playing_notes.end());
+        
+        // Create a new note
+        Note new_note = Note(pitch_in, pitch_out, velocity);
 
+        // Send a noteon message
+        out1.send("note", new_note.m_pitch_out, new_note.m_velocity);
+
+        // Add the note to the set of playing notes
+        playing_notes.push_back(new_note);
+    }
 
 private:
 
