@@ -132,39 +132,76 @@ function update_clips(){
 		getNoteParams.set('from_pitch', 0);
 		getNoteParams.set('pitch_span', 128);
 		getNoteParams.set('from_time', 0);
-		getNoteParams.set('time_span', clip.getLength()[0]);
+		getNoteParams.set('time_span', clip_looping ? clip_loop_end : clip_end_marker);
 
 		// Get the notes for the clip
-		getNoteParams.set('time_span', clip.getLength()[0]);
 		var notesJson = clip.api.call('get_notes_extended',getNoteParams);
 		var notesObject = JSON.parse(notesJson);
 		var notesArray = notesObject.notes;
 		notesArray.sort(sortByStartTime);
+
+		var clip_duration = clip_end_time - clip_start_time;
+		var clip_time_before_loop = clip_loop_end - clip_start_marker;
+		var clip_loop_duration = clip_loop_end - clip_loop_start;
+
+		// Calculate how many times the loop region fits in the clip
+		var loop_count = 0;
+		loop_count = (clip_duration - clip_time_before_loop) / clip_loop_duration;
+		loop_count = Math.ceil(loop_count);
+		
+		post('clip_duration:', clip_duration, 'clip_time_before_loop:', clip_time_before_loop, 'clip_loop_duration:', clip_loop_duration, 'loop_count:', loop_count, '\n');
+
 			
 		// We need to make a new notes array with the notes that are not muted. Furthermore, we need to take care of the start_marker and end_marker and also the looping.
 		// The first notes are the ones following the start_marker. When looping is on and the loop_end is crossed, the notes are repeated.
-		
+		notesArrayNew = [];
 		notesArray.forEach(function(note){
 			// printNote(note);	
 			// output_list.push(note.note_id);
-			if(note.mute == 0){
-				output_list.push(note.pitch);
-				output_list.push(note.start_time);
-				output_list.push(note.duration);
-				output_list.push(note.velocity);
-				
-				// output_list.push(note.probability);
-				// output_list.push(note.velocity_deviation);
-				// output_list.push(note.release_velocity);	
-				var note_start_abs = clip_start_time - clip_start_marker + note.start_time;
+			output_list.push(note.pitch);
+			output_list.push(note.start_time);
+			output_list.push(note.duration);
+			output_list.push(note.velocity);
+			// output_list.push(note.probability);
+			// output_list.push(note.velocity_deviation);
+			// output_list.push(note.release_velocity);	
 
-				post('note', note.pitch, 'start_abs:', note_start_abs  ,'\n');
+			var note_start = note.start_time - clip_start_marker;
 
+			var noteinloop = clip_looping == 1 && note.start_time >= clip_loop_start && note.start_time < clip_loop_end;
+
+			var note_will_play = note.mute == 0 && note_start >= 0;			
+			if(clip_looping == 1) note_will_play = note_will_play && note_start < clip_time_before_loop;
+
+			if(note_will_play){
+				post('note', note.pitch, 'start:', note_start, 'inloop', noteinloop , 'm', note.mute, '\n');
+				notesArrayNew.push(note);
+				if(noteinloop){
+					for(var i = 1; i <= loop_count; i++){
+						var note_new = JSON.parse(JSON.stringify(note));
+						note_new.start_time = note_start + i * clip_loop_duration;
+						if(note_new.start_time + clip_start_time < clip_end_time){
+							notesArrayNew.push(note_new);
+							post('notenew', note.pitch, 'start:', note_new.start_time, 'inloop', noteinloop , 'm', note.mute, '\n');
+						}
+					}
+				}
 			}
+
+				
+
+
+
+
+			
 		});
 
-		outlet(0, output_list);
+		notesArrayNew.sort(sortByStartTime);
 
+		// log('notesArrayNew:', notesArrayNew);
+
+
+		outlet(0, output_list);
 	}
 
 	// Move all the notes from the clipDict to the output

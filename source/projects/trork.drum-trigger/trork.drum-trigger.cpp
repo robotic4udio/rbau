@@ -31,7 +31,7 @@ private:
     bool   is_playing = false; // Is Live's transport is running?
 };
 
-class Clips {
+class Track {
 public:
     class Clip {
     public:
@@ -73,19 +73,72 @@ public:
             m_notes.clear();
         }
 
+        double clip_duration()         const { return m_end_time - m_start_time;                                          }
+        double clip_loop_duration()    const { return m_loop_end - m_loop_start;                                          }
+        double clip_time_before_loop() const { return m_loop_end - m_start_marker;                                        }
+        double loopCount()             const { return (clip_duration() - clip_time_before_loop()) / clip_loop_duration(); }
+        bool inLoopRegion(const Note& note)  const { return m_looping && note.start_time >= m_loop_start && note.start_time < m_loop_end; }
+
         // Add a note to the clip
         void add_note(int a_pitch, int a_start_time, int a_duration, int a_velocity, bool a_mute) {
             m_notes.push_back(Note(a_pitch, a_start_time, a_duration, a_velocity, a_mute));
         }
 
+        // Compute the absolute time of the notes, taking into account the clip start_time, end_time, start_marker, end_marker and looping
+        void add_to_track_notes(vector<Note>& track_notes) 
+        {
+            // If the clip is muted, we skip it
+            // if(m_muted) return;
+
+            // For each note in the clip
+            for(const Note& clipNote : m_notes) {
+                // If the clipNote is Mute, we skip it
+                if(clipNote.mute) continue;
+                // If the clipnote is outside the clip, we skip it
+                if(clipNote.start_time < 0) continue;
+                if(clipNote.start_time >= clip_duration()) continue;
+                // New note for the track. This note will have an absolute time.
+                Note trackNote = clipNote;
+                // Adjust the start time of the note according to the start marker
+                trackNote.start_time -= m_start_marker;
+                // If the new start time is negative, we skip the note
+                if(trackNote.start_time < 0) continue;
+                // If the clip is looping and the note is after the loop region, we skip the note
+                if(m_looping && trackNote.start_time >= clip_time_before_loop()) continue;
+                // Now we need to check if the note is in the loop region
+                const bool inLoop = inLoopRegion(clipNote);
+
+                trackNote.start_time += m_start_time;
+
+                // We can now push the note to the track_notes vector
+                track_notes.push_back(trackNote);
+
+                // If the note is in the loop region, we need to add the note to the track_notes vector for each loop iteration
+                if(!inLoop) continue;
+
+                // For each loop iteration
+                int numLoops = ceil(loopCount());
+                for(int i=1; i<=numLoops; i++) {
+                    // Create a new note
+                    Note loopNote = trackNote;
+                    // Adjust the start time of the note according to the loop
+                    loopNote.start_time += i * clip_loop_duration();
+                    // If the new start time is after the end marker, we skip the note
+                    if(loopNote.start_time >= m_end_time) continue;
+                    // Push the note to the track_notes vector
+                    track_notes.push_back(loopNote);
+                }
+            }
+        }
+
         // Stream operator to print the clip
         friend std::ostream& operator<<(std::ostream& os, const Clip& clip){
             os << "Clip:(" << clip.m_name << "," << clip.m_start_time << "," << clip.m_end_time <<  "," << clip.m_start_marker << "," << clip.m_end_marker << "," << clip.m_looping << "," << clip.m_loop_start << "," << clip.m_loop_end << "," << clip.m_notes.size() << ")";
-            // os << "Notes:(";
-            // for(auto& note : clip.m_notes) {
-            //     os << note << ",";
-            // }
-            // os << ")"; 
+            os << "Notes:(";
+            for(auto& note : clip.m_notes) {
+                os << note << ",";
+            }
+            os << ")"; 
             return os;
         }
 
@@ -104,10 +157,20 @@ public:
 
     };
 
-    Clips() = default;
+    Track() = default;
 
     void clear() {
         m_clips.clear();
+    }
+
+    void collect_track_notes() {
+        m_notes.clear();
+        // Add all the notes from all the clips to the notes vector
+        for(auto& clip : m_clips) {
+            clip.add_to_track_notes(m_notes);
+        }
+        // Sort the notes vector by start time
+        std::sort(m_notes.begin(), m_notes.end(), [](const Clip::Note& a, const Clip::Note& b) { return a.start_time < b.start_time; });
     }
 
     void from_atoms(const atoms& args){
@@ -121,6 +184,9 @@ public:
 
         // Add the clip to the track
         m_clips.push_back(clip);
+
+        // Collect the notes from the clips - in absolte time with looping
+        collect_track_notes();
     }
 
     // Get Clip at time
@@ -133,18 +199,32 @@ public:
     }
 
     // Stream operator to print the clip track
-    friend std::ostream& operator<<(std::ostream& os, const Clips& s_clip_track) {
-        os << "Clips:(";
-        for(auto& clip : s_clip_track.m_clips) {
+    friend std::ostream& operator<<(std::ostream& os, const Track& s_track) {
+        os << "Track:(";
+        for(auto& clip : s_track.m_clips) {
             os << clip << ",";
         }
         os << ")";
         return os;
     }
 
-private:
+    // Calculate the absolute time of the notes and add them to the notes vector
+    void calculate_notes(double time) {
+        m_notes.clear();
+        for(auto& clip : m_clips) {
+            if(clip.m_start_time <= time && clip.m_end_time >= time) {
+                for(auto& note : clip.m_notes) {
+                    if(note.start_time <= time && note.start_time + note.duration >= time) {
+                        m_notes.push_back(note);
+                    }
+                }
+            }
+        }
+    }
+
     std::vector<Clip> m_clips;
     const Clip NoClip = Clip();
+    std::vector<Clip::Note> m_notes;
 };
 
 class trork_drum_trigger : public object<trork_drum_trigger> {
@@ -236,7 +316,7 @@ public:
     // message to clear the clips
     message<> clear_clips { this, "clear_clips", "Clear the clips.",
         MIN_FUNCTION {
-            s_clip_track.clear();
+            s_track.clear();
             return {};
         }  
     };
@@ -244,7 +324,7 @@ public:
     // message to add a clip
     message<> add_clip { this, "add_clip", "Add a clip.",
         MIN_FUNCTION {
-            s_clip_track.from_atoms(args);
+            s_track.from_atoms(args);
             return {};
         }  
     };
@@ -252,7 +332,19 @@ public:
     // message to print the clips
     message<> print_clips { this, "print_clips", "Print the clips.",
         MIN_FUNCTION {
-            cout << s_clip_track << endl;
+            cout << s_track << endl;
+            return {};
+        }  
+    };
+
+    // message to print the clips
+    message<> print_track_notes { this, "print_track_notes", "Print all notes on the track.",
+        MIN_FUNCTION {
+            
+            for(auto& note : s_track.m_notes) {
+                cout << note << endl;
+            }
+
             return {};
         }  
     };
@@ -263,9 +355,8 @@ private:
     // Static list of all instances of the class
     static std::set<trork_drum_trigger*> s_instances;
     
-    // Static Clips
-    static Clips s_clip_track;
-    static Clips::Clip s_current_clip;
+    // Static Track
+    static Track s_track;
 
     // A structure to hold information about the live set
     static LiveSet s_live_set;
@@ -276,9 +367,8 @@ private:
 // Init Static variables
 std::set<trork_drum_trigger*> trork_drum_trigger::s_instances = {};
 
-// Init Clips
-Clips trork_drum_trigger::s_clip_track = Clips();
-Clips::Clip trork_drum_trigger::s_current_clip = Clips::Clip();
+// Init Track
+Track trork_drum_trigger::s_track = Track();
 
 
 // Init Static Beat
