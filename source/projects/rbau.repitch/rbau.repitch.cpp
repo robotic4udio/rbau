@@ -148,7 +148,6 @@ public:
     repitch(const atoms& args = {}) {
         // Add this instance to the list of instances
         s_instances.insert(this);
-
         // Optionally, print the number of instances to the console
         // cout << "Number of instances: " << s_instances.size() << endl;
     }
@@ -162,6 +161,8 @@ public:
         // cout << "Number of instances: " << s_instances.size() << endl;
     }
 
+
+
     // Make inlets and outlets
     inlet<>  input	{ this, "(bang) post greeting to the max console" };
     outlet<thread_check::scheduler, thread_action::fifo> out1	{ this, "(anything) output the message which is posted to the max console" };
@@ -170,7 +171,7 @@ public:
     // The playing position in the Live Set, in beats.
     message<threadsafe::yes> number { this, "number", "The playing position in the Live Set, in beats.", 
         MIN_FUNCTION {
-            s_live_set.set_beats(args[0]);
+            s_live_set.set_beats(static_cast<double>(args[0]) - offset);
 
             // Get the new chord
             const auto& new_chord = s_chord_track.get_chord_at_time(s_live_set.get_beats());
@@ -201,6 +202,21 @@ public:
         }  
     };
 
+    message<> getLiveClock { this, "getLiveClock", "Get the Live Clock",
+        MIN_FUNCTION {
+            c74::max::t_itm* clock_source = (c74::max::t_itm*) c74::max::itm_getnamed(c74::max::gensym("live"), nullptr, nullptr, 1L);
+
+            auto itm_tic = itm_getticks(clock_source);
+            double itm_tem =  itm_gettempo(clock_source);
+            auto itm_res = 480.0;
+            auto itm_bea = itm_tic / itm_res;
+
+            cout << "itm_tempo: " << itm_tem << " itm_ticks: " << itm_tic << " itm_beats: " << itm_bea << endl;
+
+            return {};
+        }
+    };
+
     // Set Chord Manually
     message<> set_chord { this, "set_chord", "Input the Chord, format: 'C7', 'C7 0 4 F7 4 12 B 12 16'",
         MIN_FUNCTION {
@@ -228,6 +244,8 @@ public:
             return {};
         }  
     };
+
+
 
 
     // Attribute for mode of operation. 
@@ -277,6 +295,17 @@ public:
             return args;
         }}
     };
+
+
+    // Attribute to offset the beats time from the Live Set
+    attribute<double> offset {this, "offset", 0.0,
+        description {"Offset the beats time from the Live Set."},
+        range {-1.0, 1.0},  // Define a range for the parameter
+        setter {MIN_FUNCTION {
+            return args;
+        }}
+    };
+
 
     // Notify all instances of a change
     static void notify_all(repitch* notifying_instance, notefication_type type) {
@@ -629,6 +658,7 @@ public:
         playing_notes.push_back(new_note);
     }
 
+
 private:
 
     // Check if a pitch is in the chord
@@ -690,11 +720,14 @@ private:
     static cmtk::Chord s_chord;
     static std::vector<int> s_pitch_vector;
 
+
+
     // Static Beat
     static double s_beats;
 
     // A structure to hold information about the live set
     static LiveSet s_live_set;
+
 
 };
 
