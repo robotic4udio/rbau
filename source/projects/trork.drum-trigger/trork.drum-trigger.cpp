@@ -350,11 +350,34 @@ public:
 
     // Attribute to set mute
     attribute<bool> mute {this, "mute", false,
-        description {"Mute the drum triggers."},
+        description {"Input from observer of the tracks mute state."},
         setter {MIN_FUNCTION {
             return args;
         }}
     };
+
+    // Attribute to set muted_via_solo
+    attribute<bool> muted_via_solo {this, "muted_via_solo", false,
+        description {"Input from observer of the tracks muted_via_solo state."},
+        setter {MIN_FUNCTION {
+            return args;
+        }}
+    };
+
+    // Attribute to set solo mode
+    attribute<bool> solo {this, "solo", false,
+        description {"Input from observer of the tracks solo state."},
+        setter {MIN_FUNCTION {
+            return args;
+        }}
+    };
+
+    bool is_muted() {
+        if(solo) return false;
+        if(mute) return true;
+        if(muted_via_solo) return true;
+        return false;
+    }
 
     void noteOn(Track::Clip::Note note) {
         // Play the note
@@ -383,7 +406,7 @@ public:
         MIN_FUNCTION {
             s_live_set.set_beats(static_cast<double>(args[0]) - offset);
 
-            if(mute) return {};
+            if(is_muted()) return {};
 
             // Print the notes between last_beats and beats
             double last_beats = s_live_set.get_last_beats();
