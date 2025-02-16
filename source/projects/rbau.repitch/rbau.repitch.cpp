@@ -128,7 +128,169 @@ public:
         return os;
     }
 
-};    
+};
+
+
+
+class Springs {
+public:
+    class Spring {
+    public:
+        Spring() = default;
+        // Index of this spring
+        int index = -1;
+        // Parameters
+        int midinote = -1;
+        int inst = 0;
+        std::string mode = "midinote"; // Options: midinote, quantize, step, bass, root, high, low, rand, arp, chord, lowest 2, lowest 
+        int note = 60;
+        int transpose = 0;
+        int pitch_min = 24;
+        int pitch_max = 96;
+        int octave_add = 0;
+        int velocity = 90;
+        int velocity_deviation = 10;
+        int duration = 250;
+
+        // Arpeggio Parameters
+        std::string arp_style = "Up"; // Support: Up, Down, UpDown, DownUp, Up & Down, Down & Up, Converge, Diverge, Con & Diverge, Pinky Up, Pinky UpDown, Thumb Up, Thumb UpDown, Play Order, Chord Trigger, Random
+        int arp_steps = 0;
+        int arp_jump = 0;
+
+        // Get the next arpeggio step
+        int getNextArpStep(const cmtk::Chord& chord) {
+            int chord_size = chord.size();
+
+            if(arp_style == "Up"){
+                if(arp_pos == chord_size) arp_pos = 0;
+                return chord.getNoteAt(arp_pos++).getPitch();
+            }
+            else if(arp_style == "Down"){
+                if(arp_pos == 0) arp_pos = chord_size;
+                return chord.getNoteAt(--arp_pos).getPitch();
+            }
+            else if(arp_style == "UpDown"){
+                if(arp_pos == chord_size) arp_direction = -1;
+                if(arp_pos == 0) arp_direction = 1;
+                return chord.getNoteAt(arp_pos += arp_direction).getPitch();
+            }
+            else if(arp_style == "DownUp"){
+                if(arp_pos == 0) arp_direction = 1;
+                if(arp_pos == chord_size) arp_direction = -1;
+                return chord.getNoteAt(arp_pos += arp_direction).getPitch();
+            }
+
+            return note;
+        };
+
+        // Get the velocity with deviation
+        int getVelocity() const {
+            int v = velocity;
+
+            if(velocity_deviation != 0) {
+                v += (rand() % (2*velocity_deviation)) - velocity_deviation;
+            }
+
+            if(v < 0) return 0;
+            if(v > 127) return 127;
+            return v;
+        }
+
+    private:
+        // Arpeggio state variables
+        int arp_pos = 0;
+        int arp_direction = 1;
+
+    };
+
+    Springs() = default;
+
+    Spring& getSpring(int index) {
+        Spring& spring = springs[index];
+        spring.index = index;
+
+        std::string index_str = std::to_string(index);
+
+        // Get midinote value
+        std::string midinote_str = index_str + "-midinote";
+        atom midinote_value = param_dict[symbol(midinote_str)];
+        spring.midinote = midinote_value;
+
+        // Get inst
+        std::string inst_str = index_str + "-inst";
+        atom inst_value = param_dict[symbol(inst_str)];
+        spring.inst = inst_value;
+
+        // Get mode value
+        std::string mode_str = index_str + "-mode";
+        atom mode_value = param_dict[symbol(mode_str)];
+        spring.mode = static_cast<std::string>(mode_value);
+
+        // Get note
+        std::string note_str = index_str + "-note";
+        atom note_value = param_dict[symbol(note_str)];
+        spring.note = note_value;
+
+        // Get transpose
+        std::string transpose_str = index_str + "-transpose";
+        atom transpose_value = param_dict[symbol(transpose_str)];
+        spring.transpose = transpose_value;
+
+        // Get pitch_min value
+        std::string pitch_min_str = index_str + "-pitch_min";
+        atom pitch_min_value = param_dict[symbol(pitch_min_str)];
+        spring.pitch_min = pitch_min_value;
+
+        // Get pitch_max value
+        std::string pitch_max_str = index_str + "-pitch_max";
+        atom pitch_max_value = param_dict[symbol(pitch_max_str)];
+        spring.pitch_max = pitch_max_value;
+
+        // Get octave_add
+        std::string octave_add_str = index_str + "-octave_add";
+        atom octave_add_value = param_dict[symbol(octave_add_str)];
+        spring.octave_add = octave_add_value;
+
+        // Get velocity
+        std::string velocity_str = index_str + "-velocity";
+        atom velocity_value = param_dict[symbol(velocity_str)];
+        spring.velocity = velocity_value;
+
+        // Get velocity deviation
+        std::string velocity_deviation_str = index_str + "-velocity_deviation";
+        atom velocity_deviation_value = param_dict[symbol(velocity_deviation_str)];
+        spring.velocity_deviation = velocity_deviation_value;
+
+        // Get duration
+        std::string duration_str = index_str + "-duration";
+        atom duration_value = param_dict[symbol(duration_str)];
+        spring.duration = duration_value;
+
+        // Get arp_style
+        std::string arp_pattern_str = index_str + "-arp_style";
+        atom arp_pattern_value = param_dict[symbol(arp_pattern_str)];
+        spring.arp_style = static_cast<std::string>(arp_pattern_value);
+
+        // Get arp_steps
+        std::string arp_steps_str = index_str + "-arp_steps";
+        atom arp_steps_value = param_dict[symbol(arp_steps_str)];
+        spring.arp_steps = arp_steps_value;
+
+        // Get arp_jump
+        std::string arp_jump_str = index_str + "-arp_jump";
+        atom arp_jump_value = param_dict[symbol(arp_jump_str)];
+        spring.arp_jump = arp_jump_value;
+        
+        return spring;
+    }
+
+    // A dictionary for the springs parameters
+    dict param_dict = dict(symbol("springs-param-dict"));
+    // Current Spring 
+    int current_spring = 1;
+    // Array of Springs
+    Spring springs[15] = {Spring()};
+};
 
 class repitch : public object<repitch> {
 public:
@@ -658,6 +820,177 @@ public:
         playing_notes.push_back(new_note);
     }
 
+    // Get value from the dictionary
+    message<threadsafe::yes> get_springs_param {this, "get_springs_param", "Get a value from the dictionary.",
+        MIN_FUNCTION {
+            if(args.size() != 1) {
+                cerr << "Error: get message requires one argument: key." << endl;
+                return {};
+            }
+
+            atoms res = m_springs.param_dict[symbol(args[0])];
+            out1.send(res);
+
+            return {};
+        }
+    };
+
+    // Get value from the dictionary
+    message<threadsafe::yes> get_spring_params {this, "get_spring_params", "Output the parameters for the selected spring.",
+        MIN_FUNCTION {
+            if(args.size() != 1) {
+                cerr << "Error: get message requires one argument: key." << endl;
+                return {};
+            }
+
+            const auto& spring = m_springs.getSpring(args[0]);
+            out1.send("springs", "param", "midinote"           , spring.midinote);
+            out1.send("springs", "param", "inst"               , spring.inst);
+            out1.send("springs", "param", "mode"               , spring.mode);
+            out1.send("springs", "param", "note"               , spring.note);
+            out1.send("springs", "param", "transpose"          , spring.transpose);
+            out1.send("springs", "param", "pitch_min"          , spring.pitch_min);
+            out1.send("springs", "param", "pitch_max"          , spring.pitch_max);
+            out1.send("springs", "param", "octave_add"         , spring.octave_add);
+            out1.send("springs", "param", "velocity"           , spring.velocity);
+            out1.send("springs", "param", "velocity_deviation" , spring.velocity_deviation);
+            out1.send("springs", "param", "duration"           , spring.duration);
+            out1.send("springs", "param", "arp_style"          , spring.arp_style);
+            out1.send("springs", "param", "arp_steps"          , spring.arp_steps);
+            out1.send("springs", "param", "arp_jump"           , spring.arp_jump);
+
+            return {};
+        }
+    };
+
+    // Set spring parameters, args[0] is the index, args[1] is the key, args[2] is the value
+    message<threadsafe::yes> set_springs_param {this, "set_springs_param", "The arguments are index, parameter, value",
+        MIN_FUNCTION {
+            if(args.size() != 3) {
+                cerr << "Error: set message requires three arguments: key and value." << endl;
+                return {};
+            }
+
+            std::string index = args[0];
+            std::string param = args[1];
+            std::string key = index + "-" + param;
+
+            // Add the rest of the arguments to value, skipping the first 2 arguments
+            switch(args[2].type())
+            {
+                case message_type::int_argument:
+                case message_type::float_argument:
+                {
+                    int value = args[2];
+                    m_springs.param_dict[symbol(key)] = value;
+                }
+                break;
+                case message_type::symbol_argument:{
+                    symbol value = args[2];
+                    m_springs.param_dict[symbol(key)] = value;
+                }
+                break;
+                default:
+                    cerr << "set_springs_param message requires a valid index: index, 'r (root)' or '(b) bass'." << endl;
+                    return {};
+            }
+            
+            return {};
+        }
+    };
+
+    // Select Spring
+    message<threadsafe::yes> select_spring {this, "select_spring", "Select the spring to edit.",
+        MIN_FUNCTION {
+            if(args.size() != 1) {
+                cerr << "Error: select_spring message requires one argument: index." << endl;
+                return {};
+            }
+
+            m_springs.current_spring = args[0];
+
+            get_spring_params(m_springs.current_spring);
+
+            return {};
+        }
+    };
+
+    // Set spring parameters, args[1] is the key, args[2] is the value
+    message<threadsafe::yes> set_spring_param {this, "set_spring_param", "Set a parameter for the selected spring. Args: parameter, value",
+        MIN_FUNCTION {
+            if(args.size() != 2) {
+                cerr << "Error: set message requires two arguments: key and value." << endl;
+                return {};
+            }
+
+            atoms myArgs;
+            // Spring Index
+            myArgs.push_back(m_springs.current_spring);
+            // Add the rest of the arguments
+            for(auto& arg : args) myArgs.push_back(arg);
+            // Call the set_springs_param function
+            set_springs_param(myArgs);
+            
+            return {};
+        }
+    };
+
+    void outSpringNote(const Springs::Spring& spring, int pitch)
+    {
+        out1.send("springs", "makenote", pitch, spring.getVelocity(), spring.duration, spring.inst);
+    };
+
+    // SpringTrig
+    message<threadsafe::yes> springTrig {this, "springTrig", "Trigger the spring at index.",
+        MIN_FUNCTION {
+            if(args.size() != 1) {
+                cerr << "Error: springTrig message requires one argument: index." << endl;
+                return {};
+            }
+
+            auto& spring = m_springs.getSpring(args[0]);
+            std::vector<int> pitch;
+
+            // Find the pitch according to the mode
+            if     (spring.mode == "midinote") pitch.push_back(spring.note);
+            else if(spring.mode == "quantize") pitch.push_back(find_nearest_pitch(spring.note)); 
+            else if(spring.mode == "step")     pitch.push_back(s_chord.getNoteAt(spring.note-60).getPitch());
+            else if(spring.mode == "root")     pitch.push_back(s_chord.getRoot().getPitch());
+            else if(spring.mode == "bass")     pitch.push_back(s_chord.getBass().getPitch());
+            else if(spring.mode == "high")     pitch.push_back(s_chord.getNotes().back().getPitch());
+            else if(spring.mode == "low" )     pitch.push_back(s_chord.getNotes().front().getPitch());
+            else if(spring.mode == "rand")     pitch.push_back(s_chord.getRandNote(spring.pitch_min, spring.pitch_max).getPitch());
+            else if(spring.mode == "arp")      pitch.push_back(spring.getNextArpStep(s_chord));
+            else if(spring.mode == "chord")    pitch = s_chord.getNotes().getPitch();
+            else {
+                cerr << "Error: Unknown mode: " << spring.mode << endl;
+                return {};
+            }
+
+            // Make the notes
+            for(auto p : pitch) {
+                // Transpose the pitch
+                p += spring.transpose;
+
+                // Get the pitch in range
+                while(p < spring.pitch_min) p += 12;
+                while(p > spring.pitch_max) p -= 12;
+
+                // MakeNote
+                outSpringNote(spring, p);
+
+                // If octave_add is set, make a new note
+                if(spring.octave_add != 0) {
+                    p += spring.octave_add * 12;
+                    outSpringNote(spring, p);
+                }
+            }
+
+            return {};
+        }
+    };
+
+
 
 private:
 
@@ -728,6 +1061,9 @@ private:
     // A structure to hold information about the live set
     static LiveSet s_live_set;
 
+    // Instrumets
+    Springs m_springs = Springs();
+
 
 };
 
@@ -751,7 +1087,7 @@ long Note::s_counter = 0;
 // Init ChordTrack
 ChordTrack repitch::s_chord_track = ChordTrack();
 ChordTrack::Chord repitch::s_current_chord = ChordTrack::Chord();
-cmtk::Chord repitch::s_chord = cmtk::Chord();
+cmtk::Chord repitch::s_chord = cmtk::Chord("Fm");
 std::vector<int> repitch::s_pitch_vector = {};
 
 
