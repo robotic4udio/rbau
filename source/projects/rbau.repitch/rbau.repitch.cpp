@@ -289,7 +289,7 @@ public:
     // Current Spring 
     int current_spring = 1;
     // Array of Springs
-    Spring springs[15] = {Spring()};
+    Spring springs[16] = {Spring()}; // 16 Springs. Index 0 is not used. But could be used for copy paste? 
 };
 
 class repitch : public object<repitch> {
