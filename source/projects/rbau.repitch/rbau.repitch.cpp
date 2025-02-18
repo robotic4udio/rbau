@@ -37,24 +37,36 @@ private:
 
 class ChordTrack {
 public:
-    struct Chord {
+    struct TimedChord {
     public:
-        Chord() : m_chord(""), m_start(-1), m_end(-1) {}
-        Chord(std::string a_chord, double a_start, double a_end) : m_chord(a_chord), m_start(a_start), m_end(a_end) {}
-        std::string m_chord;
+        TimedChord() : m_chord(""), m_start(-1), m_end(-1) {}
+        TimedChord(std::string a_chord, double a_start, double a_end) : m_chord(a_chord), m_start(a_start), m_end(a_end) {}
+        cmtk::Chord m_chord;
         double      m_start;
         double      m_end;
 
         // Init
         void init() {
-            m_chord = "";
+            m_chord = cmtk::Chord();
             m_start = -1;
             m_end   = -1;
         }
 
+        // isValid
+        bool isValid() const {
+            if(m_start < 0)     return false;
+            if(m_end < 0)       return false;
+            if(m_start > m_end) return false;
+            return m_chord.size() > 0;
+        }
+
+        // Compare two TimedChords
+        bool operator==(const TimedChord& other) const { return m_start == other.m_start && m_end == other.m_end && m_chord == other.m_chord; }
+        bool operator!=(const TimedChord& other) const { return !(*this == other); }
+
         // Stream operator to print the chord
-        friend std::ostream& operator<<(std::ostream& os, const Chord& chord) {
-            os << "Chord:(" << chord.m_chord << "," << chord.m_start << "," << chord.m_end << ")";
+        friend std::ostream& operator<<(std::ostream& os, const TimedChord& chord) {
+            os << "TimedChord:(" << chord.m_chord << "," << chord.m_start << "," << chord.m_end << ")";
             return os;
         }
     };
@@ -70,11 +82,11 @@ public:
     }
 
     void add_chord(const std::string& a_chord, double a_start, double a_end) {
-        m_chords.push_back(Chord(a_chord, a_start, a_end));
+        m_chords.push_back(TimedChord(a_chord, a_start, a_end));
     }
 
-    // Get Chord at time
-    const Chord& get_chord_at_time(double time) const {
+    // Get TimedChord at time
+    const TimedChord& get_chord_at_time(double time) const {
         for(auto it = m_chords.rbegin(); it != m_chords.rend(); ++it) {
             if(it->m_start <= time) return *it;
         }
@@ -92,9 +104,10 @@ public:
         return os;
     }
 
+
 private:
-    std::vector<Chord> m_chords;
-    const Chord NoChord = Chord("", 0, 0);
+    std::vector<TimedChord> m_chords;
+    const TimedChord NoChord = TimedChord("", -1, -1);
 };
 
 
@@ -182,6 +195,11 @@ public:
 
             return note;
         };
+
+        void resetArp() {
+            arp_pos = 0;
+            arp_direction = 1;
+        }
 
         // Get the velocity with deviation
         int getVelocity() const {
@@ -338,9 +356,12 @@ public:
             // Get the new chord
             const auto& new_chord = s_chord_track.get_chord_at_time(s_live_set.get_beats());
 
-            if(new_chord.m_chord != s_current_chord.m_chord) {
+            // If the chord has changed
+            if(new_chord != s_current_chord) {
                 s_current_chord = new_chord;
-                set_chord(new_chord.m_chord);
+                s_chord = new_chord.m_chord;
+                s_pitch_vector = s_chord.getNotes().getPitch();
+                notify_all(this, notefication_type::chord_changed);
             }
  
             return {};
@@ -1049,7 +1070,7 @@ private:
     
     // Static ChordTrack
     static ChordTrack s_chord_track;
-    static ChordTrack::Chord s_current_chord;
+    static ChordTrack::TimedChord s_current_chord;
     static cmtk::Chord s_chord;
     static std::vector<int> s_pitch_vector;
 
@@ -1086,7 +1107,7 @@ long Note::s_counter = 0;
 
 // Init ChordTrack
 ChordTrack repitch::s_chord_track = ChordTrack();
-ChordTrack::Chord repitch::s_current_chord = ChordTrack::Chord();
+ChordTrack::TimedChord repitch::s_current_chord = ChordTrack::TimedChord();
 cmtk::Chord repitch::s_chord = cmtk::Chord("Fm");
 std::vector<int> repitch::s_pitch_vector = {};
 

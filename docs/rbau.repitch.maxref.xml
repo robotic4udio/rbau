@@ -29,9 +29,54 @@
 
 	<methodlist>
 
-		<method name='allowed_note'>
-			<digest>Midi note message</digest>
-			<description>Midi note message. If note-on it is added to the allowed notes, else it is removed. </description>
+		<method name='select_spring'>
+			<digest>Select the spring to edit</digest>
+			<description>Select the spring to edit. </description>
+		</method>
+
+		<method name='set_springs_param'>
+			<digest>The arguments are index, parameter, value </digest>
+			<description>The arguments are index, parameter, value </description>
+		</method>
+
+		<method name='springTrig'>
+			<digest>Trigger the spring at index</digest>
+			<description>Trigger the spring at index. </description>
+		</method>
+
+		<method name='set_spring_param'>
+			<digest>Set a parameter for the selected spring</digest>
+			<description>Set a parameter for the selected spring. Args: parameter, value </description>
+		</method>
+
+		<method name='get_spring_params'>
+			<digest>Output the parameters for the selected spring</digest>
+			<description>Output the parameters for the selected spring. </description>
+		</method>
+
+		<method name='quantize'>
+			<digest>Quantize the pitch to the nearest chord pitch</digest>
+			<description>Quantize the pitch to the nearest chord pitch. </description>
+		</method>
+
+		<method name='noteAt'>
+			<digest>Return the pitch at the given index</digest>
+			<description>Return the pitch at the given index. </description>
+		</method>
+
+		<method name='get_rand'>
+			<digest>Return a random pitch from the chord</digest>
+			<description>Return a random pitch from the chord. </description>
+		</method>
+
+		<method name='get_pitch_vector'>
+			<digest>Return the midinotes of the chord tones</digest>
+			<description>Return the midinotes of the chord tones. </description>
+		</method>
+
+		<method name='get_chord'>
+			<digest>Return the chord symbol</digest>
+			<description>Return the chord symbol. </description>
 		</method>
 
 		<method name='note'>
@@ -39,24 +84,44 @@
 			<description>Midi note message. If not in the allowed notes, the note is repitched. </description>
 		</method>
 
-		<method name='remove_allowed_notes'>
-			<digest>Input a vector of allowed notes to remove</digest>
-			<description>Input a vector of allowed notes to remove. </description>
+		<method name='set_chord_track'>
+			<digest>Input the ChordTrack, format: 'C7 0 4 F7 4 12 B 12 16', Chord, StartTime, EndTime </digest>
+			<description>Input the ChordTrack, format: 'C7 0 4 F7 4 12 B 12 16', Chord, StartTime, EndTime </description>
 		</method>
 
-		<method name='add_allowed_notes'>
-			<digest>Input a vector of allowed notes to add</digest>
-			<description>Input a vector of allowed notes to add. </description>
+		<method name='get_bass'>
+			<digest>Return the bass of the chord</digest>
+			<description>Return the bass of the chord. </description>
 		</method>
 
-		<method name='get_allowed_notes'>
-			<digest>Output the allowed notes</digest>
-			<description>Output the allowed notes. </description>
+		<method name='get_root'>
+			<digest>Return the root of the chord</digest>
+			<description>Return the root of the chord. </description>
 		</method>
 
-		<method name='set_allowed_notes'>
-			<digest>Input a vector of allowed notes</digest>
-			<description>Input a vector of allowed notes. </description>
+		<method name='float'>
+			<digest>The playing position in the Live Set, in beats</digest>
+			<description>The playing position in the Live Set, in beats. </description>
+		</method>
+
+		<method name='tempo'>
+			<digest>Set the tempo of the Live Set</digest>
+			<description>Set the tempo of the Live Set. </description>
+		</method>
+
+		<method name='get_springs_param'>
+			<digest>Get a value from the dictionary</digest>
+			<description>Get a value from the dictionary. </description>
+		</method>
+
+		<method name='playing'>
+			<digest>Is Live's transport is running? </digest>
+			<description>Is Live's transport is running? </description>
+		</method>
+
+		<method name='set_chord'>
+			<digest>Input the Chord, format: 'C7', 'C7 0 4 F7 4 12 B 12 16' </digest>
+			<description>Input the Chord, format: 'C7', 'C7 0 4 F7 4 12 B 12 16' </description>
 		</method>
 
 	</methodlist>
@@ -69,6 +134,31 @@
 		<attribute name='mode' get='1' set='1' type='long' size='1' >
 			<digest>Mode of operation</digest>
 			<description>Mode of operation. </description>
+		</attribute>
+
+		<attribute name='note_mode' get='1' set='1' type='long' size='1' >
+			<digest>Choose what happens when a note is played</digest>
+			<description>Choose what happens when a note is played. </description>
+		</attribute>
+
+		<attribute name='offset' get='1' set='1' type='float64' size='1' >
+			<digest>Offset the beats time from the Live Set</digest>
+			<description>Offset the beats time from the Live Set. </description>
+		</attribute>
+
+		<attribute name='pitch_max' get='1' set='1' type='long' size='1' >
+			<digest>Maximum pitch allowed</digest>
+			<description>Maximum pitch allowed. </description>
+		</attribute>
+
+		<attribute name='pitch_min' get='1' set='1' type='long' size='1' >
+			<digest>Minimum pitch allowed</digest>
+			<description>Minimum pitch allowed. </description>
+		</attribute>
+
+		<attribute name='play_chord' get='1' set='1' type='long' size='1' >
+			<digest>When the chord changes, the chord is played </digest>
+			<description>When the chord changes, the chord is played </description>
 		</attribute>
 
 	</attributelist>
