@@ -9,6 +9,7 @@
 #include "Chord.h"
 #include "Note.h"
 #include "Interval.h"
+#include "Arp.h"
 
 using namespace c74::min;
 
@@ -30,7 +31,7 @@ public:
     bool   get_is_playing() const { return is_playing; }
 
 private:    
-    double tempo = 120.0;      // The tempo of the Live Set, in BPM.
+    double tempo = 120.0;      // The Tempo of the Live Set, in BPM.
     double beats = -1.0;       // The current playing position in the Live Set, in beats.
     bool   is_playing = false; // Is Live's transport is running?
 };
@@ -165,41 +166,9 @@ public:
         int velocity_deviation = 10;
         int duration = 250;
 
-        // Arpeggio Parameters
-        std::string arp_style = "Up"; // Support: Up, Down, UpDown, DownUp, Up & Down, Down & Up, Converge, Diverge, Con & Diverge, Pinky Up, Pinky UpDown, Thumb Up, Thumb UpDown, Play Order, Chord Trigger, Random
-        int arp_steps = 0;
-        int arp_jump = 0;
-
-        // Get the next arpeggio step
-        int getNextArpStep(const cmtk::Chord& chord) {
-            int chord_size = chord.size();
-
-            if(arp_style == "Up"){
-                if(arp_pos == chord_size) arp_pos = 0;
-                return chord.getNoteAt(arp_pos++).getPitch();
-            }
-            else if(arp_style == "Down"){
-                if(arp_pos == 0) arp_pos = chord_size;
-                return chord.getNoteAt(--arp_pos).getPitch();
-            }
-            else if(arp_style == "UpDown"){
-                if(arp_pos == chord_size) arp_direction = -1;
-                if(arp_pos == 0) arp_direction = 1;
-                return chord.getNoteAt(arp_pos += arp_direction).getPitch();
-            }
-            else if(arp_style == "DownUp"){
-                if(arp_pos == 0) arp_direction = 1;
-                if(arp_pos == chord_size) arp_direction = -1;
-                return chord.getNoteAt(arp_pos += arp_direction).getPitch();
-            }
-
-            return note;
-        };
-
-        void resetArp() {
-            arp_pos = 0;
-            arp_direction = 1;
-        }
+        // Arp
+        cmtk::ChordArp arp;
+        int arp_reset = 0; // 0: Off, 1: Chord, 2: Bar, 3: Beat, 4: Bar & Chord, 5: Beat & Chord
 
         // Get the velocity with deviation
         int getVelocity() const {
@@ -213,11 +182,6 @@ public:
             if(v > 127) return 127;
             return v;
         }
-
-    private:
-        // Arpeggio state variables
-        int arp_pos = 0;
-        int arp_direction = 1;
 
     };
 
@@ -287,19 +251,37 @@ public:
         // Get arp_style
         std::string arp_pattern_str = index_str + "-arp_style";
         atom arp_pattern_value = param_dict[symbol(arp_pattern_str)];
-        spring.arp_style = static_cast<std::string>(arp_pattern_value);
+        spring.arp.setStyle(static_cast<std::string>(arp_pattern_value));
 
         // Get arp_steps
         std::string arp_steps_str = index_str + "-arp_steps";
         atom arp_steps_value = param_dict[symbol(arp_steps_str)];
-        spring.arp_steps = arp_steps_value;
+        spring.arp.setSteps(arp_steps_value);
 
         // Get arp_jump
         std::string arp_jump_str = index_str + "-arp_jump";
         atom arp_jump_value = param_dict[symbol(arp_jump_str)];
-        spring.arp_jump = arp_jump_value;
+        spring.arp.setJump(arp_jump_value);
+
+        // Get arp_octaves
+        std::string arp_octaves_str = index_str + "-arp_octaves";
+        atom arp_octaves_value = param_dict[symbol(arp_octaves_str)];
+        spring.arp.setOctaves(arp_octaves_value);
+
+        // Get arp_reset
+        std::string arp_reset_str = index_str + "-arp_reset";
+        atom arp_reset_value = param_dict[symbol(arp_reset_str)];
+        spring.arp_reset = arp_reset_value;
         
         return spring;
+    }
+
+    void chordChanged()
+    {
+        for(auto& spring : springs)
+        {
+            if(spring.arp_reset == 1) spring.arp.reset();
+        }
     }
 
     // A dictionary for the springs parameters
@@ -345,7 +327,7 @@ public:
 
     // Make inlets and outlets
     inlet<>  input	{ this, "(bang) post greeting to the max console" };
-    outlet<thread_check::scheduler, thread_action::fifo> out1	{ this, "(anything) output the message which is posted to the max console" };
+    outlet<thread_check::scheduler, thread_action::fifo> out1 { this, "(anything) output the message which is posted to the max console" };
     outlet<thread_check::scheduler, thread_action::fifo> out2 { this, "(bang) when the chord changes" };
 
     // The playing position in the Live Set, in beats.
@@ -492,9 +474,7 @@ public:
 
     // Notify all instances of a change
     static void notify_all(repitch* notifying_instance, notefication_type type) {
-        for (auto instance : s_instances){
-            instance->notify(notifying_instance, type);
-        }
+        for (auto instance : s_instances) instance->notify(notifying_instance, type);
     }
 
     // Notify this instance of a change. Pass the type of change as an argument and also the instance that is notifying.
@@ -521,6 +501,9 @@ public:
             }
         }
 
+        // Reset all the spring arps
+        m_springs.chordChanged();
+
         // Send a bang to the second outlet to notify that the chord has changed
         out2.send("bang");
     }
@@ -536,6 +519,7 @@ public:
         }
     }
 
+    // playChord
     void playChord(int velocity) {
         // Note Off
         if(velocity==0)
@@ -730,8 +714,6 @@ public:
         } 
     };
 
-
-
     // Get Quantized to Chord Pitch (accepts lists)
     message<threadsafe::yes> quantize {this, "quantize", "Quantize the pitch to the nearest chord pitch.",
         MIN_FUNCTION {
@@ -876,9 +858,12 @@ public:
             out1.send("springs", "param", "velocity"           , spring.velocity);
             out1.send("springs", "param", "velocity_deviation" , spring.velocity_deviation);
             out1.send("springs", "param", "duration"           , spring.duration);
-            out1.send("springs", "param", "arp_style"          , spring.arp_style);
-            out1.send("springs", "param", "arp_steps"          , spring.arp_steps);
-            out1.send("springs", "param", "arp_jump"           , spring.arp_jump);
+            out1.send("springs", "param", "arp_style"          , spring.arp.getStyle());
+            out1.send("springs", "param", "arp_steps"          , spring.arp.getSteps());
+            out1.send("springs", "param", "arp_jump"           , spring.arp.getJump());
+            out1.send("springs", "param", "arp_octaves"        , spring.arp.getOctaves());
+            out1.send("springs", "param", "arp_reset"     , spring.arp_reset);
+
 
             return {};
         }
@@ -981,7 +966,7 @@ public:
             else if(spring.mode == "high")     pitch.push_back(s_chord.getNotes().back().getPitch());
             else if(spring.mode == "low" )     pitch.push_back(s_chord.getNotes().front().getPitch());
             else if(spring.mode == "rand")     pitch.push_back(s_chord.getRandNote(spring.pitch_min, spring.pitch_max).getPitch());
-            else if(spring.mode == "arp")      pitch.push_back(spring.getNextArpStep(s_chord));
+            else if(spring.mode == "arp")      pitch.push_back(spring.arp.next(s_chord));
             else if(spring.mode == "chord")    pitch = s_chord.getNotes().getPitch();
             else {
                 cerr << "Error: Unknown mode: " << spring.mode << endl;
